@@ -3,50 +3,87 @@ package tcp;
 import common.Logger;
 import java.io.*;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 
-/**
- * The TCPClient class is a simple TCP client that connects to a server,
- * sends a request, and receives a response. The request and response
- * are logged using a Logger.
- *
- * Usage: java TCPClient <hostname> <port> <operation> [key] [value]
- *
- * <hostname> - The hostname of the server to connect to.
- * <port> - The port number of the server to connect to.
- * <operation> - The operation to perform (e.g., GET, PUT).
- * [key] - The key for the operation (optional, depending on the operation).
- * [value] - The value for the operation (optional, depending on the operation).
- *
- * Example:
- * java TCPClient localhost 8080 PUT myKey myValue
- *
- * The client sends a request in the format: "operation key value"
- * and logs the sent request and received response.
- *
- * If an IOException occurs, it is logged as a client exception.
- */
 public class TCPClient {
+
+    private static int requestIdCounter = 1;
+
     public static void main(String[] args) {
-        if (args.length < 3) {
-            System.out.println("Usage: java TCPClient <hostname> <port> <operation> [key] [value]");
+        if (args.length < 2) {
+            System.out.println("Usage: java TCPClient <hostname> <port>");
             return;
         }
         String hostname = args[0];
         int port = Integer.parseInt(args[1]);
-        String operation = args[2];
-        String key = args.length > 3 ? args[3] : null;
-        String value = args.length > 4 ? args[4] : null;
 
-        try (Socket socket = new Socket(hostname, port);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
-            String request = operation + " " + (key != null ? key : "") + " " + (value != null ? value : "");
-             Logger.log("Sent request: " + request); // Log the sent request
+        // define 5 key-value pairs
+        String[] keys = {"key1", "key2", "key3", "key4", "key5"};
+        String[] values = {"value1", "value2", "value3", "value4", "value5"};
+
+        // execute 5 PUT operations
+        for (int i = 0; i < keys.length; i++) {
+            String response = sendTCPRequest("PUT", keys[i], values[i], hostname, port);
+            Logger.log("PUT Response: " + response);
+        }
+
+        // excute 5 GET operations
+        for (int i = 0; i < keys.length; i++) {
+            String response = sendTCPRequest("GET", keys[i], null, hostname, port);
+            Logger.log("GET Response: " + response);
+        }
+
+        // execute 5 DELETE operations
+        for (int i = 0; i < keys.length; i++) {
+            String response = sendTCPRequest("DELETE", keys[i], null, hostname, port);
+            Logger.log("DELETE Response: " + response);
+        }
+    }
+
+    private static String sendTCPRequest(String operation, String key, String value, String hostname, int port) {
+        int requestId = requestIdCounter++;
+        // construct the request string
+        String request;
+        if (value != null) {
+            request = requestId + " " + operation + " " + key + " " + value;
+        } else if (key != null) {
+            request = requestId + " " + operation + " " + key;
+        } else {
+            request = requestId + " " + operation;
+        }
+
+        try (Socket socket = new Socket(hostname, port)) {
+            socket.setSoTimeout(5000); // set a timeout for the socket
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+            Logger.log("Sent request: " + request);
             out.println(request);
-            String response = in.readLine();
-            Logger.log("Received response: " + response);
+
+            String responseLine = in.readLine();
+            if (responseLine == null) {
+                Logger.log("No response received for request id " + requestId);
+                return "No response";
+            }
+            Logger.log("Received response: " + responseLine);
+
+            // check if the response contains the request id
+            String[] tokens = responseLine.split(" ", 2);
+            if (tokens.length < 2) {
+                Logger.log("Malformed response: " + responseLine);
+                return responseLine;
+            }
+            int responseId = Integer.parseInt(tokens[0]);
+            if (responseId != requestId) {
+                Logger.log("Unsolicited response: expected id " + requestId + " but got " + responseId);
+            }
+            return tokens[1]; // return the response message
+        } catch (SocketTimeoutException e) {
+            Logger.log("Timeout waiting for response for request id " + requestId);
+            return "Timeout";
         } catch (IOException e) {
             Logger.log("Client exception: " + e.getMessage());
+            return "Error";
         }
     }
 }

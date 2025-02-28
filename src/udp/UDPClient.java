@@ -1,51 +1,87 @@
 package udp;
 
-import common.Logger; // Import the Logger class from the common package
-import java.net.DatagramPacket; // Import class to represent datagram packets
-import java.net.DatagramSocket; // Import class for sending and receiving UDP datagram packets
-import java.net.InetAddress; // Import class for representing IP addresses
+import common.Logger;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketTimeoutException;
 
-/**
- * Represents a simple UDP client that sends key-value store operation requests to a server.
- * It constructs the requests and handles responses over UDP.
- */
 public class UDPClient {
-    /**
-     * Main method for the UDPClient.
-     *
-     * @param args Command line arguments, expecting: <hostname> <port> <operation> [key] [value]
-     */
+    private static int requestIdCounter = 1;
+
     public static void main(String[] args) {
-        if (args.length < 3) { // Validates that the correct number of command line arguments were passed in.
-            System.out.println("Usage: java UDPClient <hostname> <port> <operation> [key] [value]"); // If not correct, print the correct usage message.
-            return; // exit the application
+        if (args.length < 2) {
+            System.out.println("Usage: java UDPClient <hostname> <port>");
+            return;
         }
-        String hostname = args[0]; // Get host name from argument
-        int port = Integer.parseInt(args[1]); // Get the port from the arguments, and convert to an int.
-        String operation = args[2]; // Get the operation
-        String key = args.length > 3 ? args[3] : null; // Get the key if there is one.
-        String value = args.length > 4 ? args[4] : null; // Get the value if there is one.
+        String hostname = args[0];
+        int port = Integer.parseInt(args[1]);
 
-        try (DatagramSocket socket = new DatagramSocket()) { // Create a UDP socket with try-with-resources to automatically close the socket.
-            InetAddress address = InetAddress.getByName(hostname);  // Get the IP address for host.
+        // define 5 key-value pairs
+        String[] keys = {"key1", "key2", "key3", "key4", "key5"};
+        String[] values = {"value1", "value2", "value3", "value4", "value5"};
 
-            // Construct the request
-             String request = operation + " " + (key != null ? key : "") + " " + (value != null ? value : ""); // Create the request string
-            byte[] buffer = request.getBytes(); // Convert the request string into a byte array.
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, port); // Create the UDP datagram packet with the request bytes, address and port.
+        // execute 5 PUT operations
+        for (int i = 0; i < keys.length; i++) {
+            String response = sendUDPRequest("PUT", keys[i], values[i], hostname, port);
+            Logger.log("PUT Response: " + response);
+        }
 
-             // Send the request
-            Logger.log("Sent request to " + hostname + ":" + port + ": " + request); //Log the sent request
-            socket.send(packet); // Send the datagram packet to the server.
+        // execute 5 GET operations
+        for (int i = 0; i < keys.length; i++) {
+            String response = sendUDPRequest("GET", keys[i], null, hostname, port);
+            Logger.log("GET Response: " + response);
+        }
 
-             // Receive the response
-            byte[] responseBuffer = new byte[1024]; // Initialize a response buffer.
-            DatagramPacket responsePacket = new DatagramPacket(responseBuffer, responseBuffer.length); // create the response packet.
-            socket.receive(responsePacket); // Wait until you receive a response from the server.
-            String response = new String(responsePacket.getData(), 0, responsePacket.getLength()); // Convert the received response byte array to a string.
-            Logger.log("Received response: " + response);  
+        // execute 5 DELETE operations
+        for (int i = 0; i < keys.length; i++) {
+            String response = sendUDPRequest("DELETE", keys[i], null, hostname, port);
+            Logger.log("DELETE Response: " + response);
+        }
+    }
+
+    private static String sendUDPRequest(String operation, String key, String value, String hostname, int port) {
+        int requestId = requestIdCounter++;
+        String request;
+        if (value != null) {
+            request = requestId + " " + operation + " " + key + " " + value;
+        } else if (key != null) {
+            request = requestId + " " + operation + " " + key;
+        } else {
+            request = requestId + " " + operation;
+        }
+
+        try (DatagramSocket socket = new DatagramSocket()) {
+            socket.setSoTimeout(5000);
+            InetAddress address = InetAddress.getByName(hostname);
+            byte[] buffer = request.getBytes();
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, port);
+            Logger.log("Sent request to " + hostname + ":" + port + ": " + request);
+            socket.send(packet);
+
+            byte[] responseBuffer = new byte[1024];
+            DatagramPacket responsePacket = new DatagramPacket(responseBuffer, responseBuffer.length);
+            socket.receive(responsePacket);
+            String responseLine = new String(responsePacket.getData(), 0, responsePacket.getLength());
+            Logger.log("Received response: " + responseLine);
+
+            // 检查响应中的请求 ID 是否匹配
+            String[] tokens = responseLine.split(" ", 2);
+            if (tokens.length < 2) {
+                Logger.log("Malformed response: " + responseLine);
+                return responseLine;
+            }
+            int responseId = Integer.parseInt(tokens[0]);
+            if (responseId != requestId) {
+                Logger.log("Unsolicited response: expected id " + requestId + " but got " + responseId);
+            }
+            return tokens[1];
+        } catch (SocketTimeoutException e) {
+            Logger.log("Timeout waiting for response for request id " + requestId);
+            return "Timeout";
         } catch (Exception e) {
-            Logger.log("Client exception: " + e.getMessage()); //Log any exceptions that occur while processing the packet.
+            Logger.log("Client exception: " + e.getMessage());
+            return "Error";
         }
     }
 }
