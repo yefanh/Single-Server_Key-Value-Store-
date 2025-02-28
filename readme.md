@@ -73,11 +73,5 @@ The server will log incoming requests, responses, and errors if any.
 | **Port Already in Use** | Another process is using the port | Choose a different port and restart the server |
 | **UDP Requests Timeout** | Server is down or unreachable | Ensure the UDP server is running and reachable |
 
----
 
-## **Authors and Contributors**
-- **Name:** Yefan He
-- **Date:** February 28, 2025
-
-This project meets all assignment requirements and is ready for submission.
 
